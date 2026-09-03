@@ -20,6 +20,9 @@ Gem::Specification.new do |spec|
 
   spec.metadata["homepage_uri"]          = spec.homepage
   spec.metadata["documentation_uri"]     = "https://bellhop.dev/docs"
+  spec.metadata["source_code_uri"]       = "https://github.com/usefae/bellhop-rails"
+  spec.metadata["changelog_uri"]         = "https://github.com/usefae/bellhop-rails/blob/main/CHANGELOG.md"
+  spec.metadata["bug_tracker_uri"]       = "https://github.com/usefae/bellhop-rails/issues"
   spec.metadata["rubygems_mfa_required"] = "true"
 
   spec.files = Dir[

@@ -249,6 +249,7 @@ connection, so at-least-once delivery still holds.
 
 The protocol reference at https://bellhop.dev/docs/protocol is normative.
 Where this gem disagrees with it, the gem is wrong. The integration guide is
-at https://bellhop.dev/docs.
+at https://bellhop.dev/docs. Source and issues are at
+https://github.com/usefae/bellhop-rails.
 
 MIT licence.
