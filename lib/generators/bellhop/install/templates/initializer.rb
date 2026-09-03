@@ -28,6 +28,13 @@ Bellhop.configure do |config|
   #
   #   config.poll_seconds = 25
 
+  # Bellhop's pubsub, in the shape of cable.yml. Unset, Bellhop uses the
+  # application's Action Cable adapter. An application on AnyCable must set
+  # this, because AnyCable's adapter cannot subscribe from Rails.
+  #
+  #   config.cable = { adapter: "solid_cable" }
+  #   config.cable = { adapter: "redis", url: ENV["REDIS_URL"] }
+
   # The licensing API. Defaults to https://bellhop.dev.
   #
   #   config.api_url = "https://bellhop.dev"

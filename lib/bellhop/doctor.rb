@@ -63,23 +63,28 @@ module Bellhop
       end
 
       if Bellhop.cable_available?
-        adapter = Bellhop::Cable.configuration.cable["adapter"].to_s
-        fleet   = paired_count
+        begin
+          adapter = Bellhop::Cable.cable_config["adapter"].to_s
+          source  = Bellhop.config.cable.present? ? " from config.cable" : ""
+          fleet   = paired_count
 
-        case adapter
-        when "async"
-          add.call "cable adapter", false, adapter,
-            "The async adapter is in-process only. With more than one Puma worker, a print created by one cannot reach a socket held by another. Use solid_cable or redis in production."
-        when "solid_cable"
-          if fleet < 1_000
-            add.call "cable adapter", true, "#{adapter}, #{fleet} paired agent(s)",
-              "Fine at this size. solid_cable polls the database per process with one channel per connected agent, so plan on the redis adapter by roughly a thousand agents."
+          case adapter
+          when "async"
+            add.call "cable adapter", false, "#{adapter}#{source}",
+              "The async adapter is in-process only. With more than one Puma worker, a print created by one cannot reach a socket held by another. Use solid_cable or redis in production."
+          when "solid_cable"
+            if fleet < 1_000
+              add.call "cable adapter", true, "#{adapter}#{source}, #{fleet} paired agent(s)",
+                "Fine at this size. solid_cable polls the database per process with one channel per connected agent, so plan on the redis adapter by roughly a thousand agents."
+            else
+              add.call "cable adapter", false, "#{adapter}#{source}, #{fleet} paired agent(s)",
+                "At this fleet size solid_cable's per-process database polling is real load in its own right. Switch Bellhop to the redis adapter."
+            end
           else
-            add.call "cable adapter", false, "#{adapter}, #{fleet} paired agent(s)",
-              "At this fleet size solid_cable's per-process database polling is real load in its own right. Switch Action Cable to the redis adapter."
+            add.call "cable adapter", true, "#{adapter}#{source}"
           end
-        else
-          add.call "cable adapter", true, adapter
+        rescue ConfigurationError => e
+          add.call "cable adapter", false, "any_cable", e.message
         end
       end
 
