@@ -1,0 +1,52 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <meta name="theme-color" content="#2E1A33">
+    <title><%= content_for(:title) || "Bellhop" %></title>
+    <%= csrf_meta_tags %>
+
+    <%# The page's only external request. Delete these three lines and the
+        stacks fall back to Georgia and the system sans. %>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Libre+Caslon+Display&family=Instrument+Sans:wght@400;500;600;700&family=Courier+Prime:wght@400;700&display=swap">
+
+    <%= render "bellhop/admin/style" %>
+  </head>
+
+  <body>
+    <header class="hdr">
+      <div class="wrap hdr-in">
+        <%= link_to agents_path, class: "mark" do %>
+          <%= render "bellhop/admin/bell" %><span>Bellhop.</span>
+        <% end %>
+        <span class="hdr-tag"><%= content_for(:tag) || "Agent admin" %></span>
+        <a class="hdr-link" href="https://bellhop.dev/docs">Docs</a>
+      </div>
+    </header>
+
+    <div class="braid" aria-hidden="true"></div>
+
+    <%# Only the agents index sets these. %>
+    <% if content_for?(:facts) %>
+      <div class="facts">
+        <div class="wrap facts-in"><%= yield :facts %></div>
+      </div>
+    <% end %>
+
+    <main class="wrap">
+      <% if flash[:alert].present? %>
+        <p class="notice notice-alert"><%= flash[:alert] %></p>
+      <% end %>
+      <% if flash[:notice].present? %>
+        <p class="notice notice-good"><%= flash[:notice] %></p>
+      <% end %>
+
+      <%= yield %>
+    </main>
+
+    <footer class="foot wrap"><em>Local printers and scales for your web app.</em></footer>
+  </body>
+</html>

@@ -1,0 +1,170 @@
+<% content_for :title, "Agents · Bellhop" %>
+<% online = @agents.count(&:online?) %>
+
+<% content_for :facts do %>
+  <div class="fact">
+    <span class="caps">Pairing host</span>
+    <span class="fact-value mono"><%= Bellhop.config.server_host %></span>
+  </div>
+  <div class="fact">
+    <span class="caps">Licensing</span>
+    <span class="fact-value mono"><%= Bellhop.config.api_url %></span>
+  </div>
+  <div class="fact">
+    <span class="caps">Agents</span>
+    <span class="fact-value"><%= @agents.size %></span>
+    <span class="fact-note">· <%= online %> online</span>
+  </div>
+<% end %>
+
+<section class="section">
+  <div class="section-head">
+    <h2>Agents</h2>
+    <span class="caps"><%= @agents.size %> registered · <%= online %> online</span>
+  </div>
+
+  <div class="paper">
+    <% if @agents.any? %>
+      <div class="scroll">
+        <table class="register register-wide">
+          <thead>
+            <tr>
+              <th>No.</th>
+              <th>Agent</th>
+              <th>State</th>
+              <th>Agent</th>
+              <th>Capabilities</th>
+              <th>Printers</th>
+              <th>Licence</th>
+              <th class="right col-actions">Actions</th>
+            </tr>
+          </thead>
+          <tbody>
+            <% @agents.each_with_index do |agent, index| %>
+              <tr>
+                <td class="tight">
+                  <span class="numeral <%= "spent" unless agent.paired? %>">
+                    <%= format("%03d", index + 1) %>
+                  </span>
+                </td>
+
+                <td>
+                  <div class="entry"><%= agent.label %></div>
+                  <div class="entry-note">agent <%= agent.remote_id %></div>
+                </td>
+
+                <td>
+                  <% if !agent.paired? %>
+                    <span class="seal seal-wait">Not paired</span>
+                  <% elsif agent.online? %>
+                    <span class="seal seal-good">Online</span>
+                  <% else %>
+                    <span class="seal seal-idle">Offline</span>
+                  <% end %>
+                </td>
+
+                <td>
+                  <div class="cell-list"><%= agent.agent_version %></div>
+                  <div class="entry-note nowrap"><%= agent.platform %></div>
+                </td>
+
+                <td class="cell-list"><%= agent.capabilities.join(", ").presence || "none" %></td>
+
+                <td class="cell-list">
+                  <%= agent.printers.map { |printer| printer["name"].presence || printer["id"] }.join(", ").presence || "none" %>
+                </td>
+
+                <td class="cell-date">
+                  <%= agent.credential_expires_at&.to_date&.iso8601 || "not issued" %>
+                </td>
+
+                <td class="right">
+                  <div class="actions">
+                    <%= button_to "Label", print_agent_path(agent), class: "btn btn-sm" %>
+                    <span class="actions-break"></span>
+                    <%= button_to "Re-pair", repair_agent_path(agent), class: "row-action row-action-quiet" %>
+                    <%= button_to "Remove", remove_agent_path(agent), method: :delete, class: "row-action" %>
+                  </div>
+                </td>
+              </tr>
+            <% end %>
+          </tbody>
+        </table>
+      </div>
+
+      <p class="register-note">
+        An agent is a machine. Pairing binds it to this server's host, and
+        re-pairing moves it to another machine.
+      </p>
+    <% else %>
+      <p class="empty">No agents yet. Add the first one below.</p>
+    <% end %>
+  </div>
+
+  <%= form_with url: agents_path, method: :post, class: "paper paper-pad" do |form| %>
+    <%= form.label :label, "New agent", class: "field-label" %>
+    <div class="row">
+      <%= form.text_field :label, placeholder: "Shipping Desk", required: true, class: "field" %>
+      <%= form.submit "Add an agent", class: "btn btn-gold" %>
+    </div>
+    <p class="field-note">
+      Name it after the place rather than the hardware. The printers attached to
+      it can change without the agent changing.
+    </p>
+  <% end %>
+</section>
+
+<section class="section">
+  <div class="section-head">
+    <h2>Recent jobs</h2>
+    <span class="caps"><%= @jobs.size %> most recent</span>
+  </div>
+
+  <div class="paper">
+    <% if @jobs.any? %>
+      <div class="scroll">
+        <table class="register">
+          <thead>
+            <tr>
+              <th>Id</th>
+              <th>Agent</th>
+              <th>Kind / format</th>
+              <th>Delivery</th>
+              <th>Status</th>
+              <th>Error</th>
+            </tr>
+          </thead>
+          <tbody>
+            <% @jobs.each do |job| %>
+              <tr>
+                <td class="cell-date"><code><%= job.id %></code></td>
+                <td class="cell-list"><%= job.agent.label %></td>
+                <td class="cell-list"><%= job.kind %> / <%= job.format %></td>
+                <td class="cell-list"><%= job.url.present? ? "url" : "inline data" %></td>
+                <td>
+                  <% case job.status
+                     when "printed" %>
+                    <span class="seal seal-good">Printed</span>
+                  <% when "failed" %>
+                    <span class="seal seal-bad">Failed</span>
+                  <% when "sent" %>
+                    <% if job.sent_at && job.sent_at < Bellhop.config.unacked_warning_after.ago %>
+                      <span class="seal seal-wait">Sent, no ack</span>
+                    <% else %>
+                      <span class="seal seal-idle">Sent</span>
+                    <% end %>
+                  <% else %>
+                    <span class="seal seal-idle">Queued</span>
+                  <% end %>
+                </td>
+                <td class="cell-error"><%= job.error %></td>
+              </tr>
+            <% end %>
+          </tbody>
+        </table>
+      </div>
+    <% else %>
+      <p class="empty">Nothing printed yet.</p>
+    <% end %>
+  </div>
+</section>

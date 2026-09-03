@@ -1,0 +1,45 @@
+<% content_for :title, "Pair #{@agent.label} · Bellhop" %>
+<% content_for :tag, "Pairing" %>
+
+<section class="page">
+  <h1 class="page-title">Pair &ldquo;<%= @agent.label %>&rdquo;</h1>
+  <p class="sub">
+    Open this on the computer at that location. macOS and Windows hand
+    <code>bellhop://</code> links to the Bellhop agent.
+  </p>
+
+  <div class="sheet">
+    <span class="caps">Pairing link</span>
+    <div class="row">
+      <input class="field field-mono" id="bellhop-pairing-link" readonly
+             aria-label="Pairing link" value="<%= @agent.pairing_link %>">
+      <button class="btn" type="button" data-bellhop-copy="bellhop-pairing-link">Copy</button>
+    </div>
+    <p class="field-note">
+      Single use, and it expires in <%= distance_of_time_in_words(Bellhop.config.claim_ttl) %>.
+      Shown once; use &ldquo;Re-pair&rdquo; for another.
+    </p>
+    <p class="sheet-cta">
+      <%= link_to "Open in the agent on this computer", @agent.pairing_link, class: "btn btn-gold" %>
+    </p>
+  </div>
+
+  <p class="page-back">
+    <%= link_to "← Back to agents", agents_path, class: "btn btn-quiet" %>
+  </p>
+</section>
+
+<%# Delegated so it survives a Turbo page change; guarded so a second visit
+    does not bind a second listener. %>
+<%= javascript_tag nonce: true do %>
+  if (!window.bellhopCopyBound) {
+    window.bellhopCopyBound = true
+    document.addEventListener("click", async (event) => {
+      const button = event.target.closest("[data-bellhop-copy]")
+      if (!button) return
+      await navigator.clipboard.writeText(document.getElementById(button.dataset.bellhopCopy).value)
+      button.textContent = "Copied"
+      setTimeout(() => { button.textContent = "Copy" }, 1500)
+    })
+  }
+<% end %>

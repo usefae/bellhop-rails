@@ -1,0 +1,12 @@
+/.bundle/
+/Gemfile.lock
+/pkg/
+/test/dummy/log/
+/test/dummy/tmp/
+/test/dummy/db/*.sqlite3*
+.DS_Store
+/tmp/
+
+# The document signing key is a private key. Nothing in the gem reads it and
+# the gemspec does not package it, so it has no business in the history.
+/data/

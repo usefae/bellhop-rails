@@ -1,0 +1,22 @@
+<% content_for :title, "Could not create that agent · Bellhop" %>
+<% content_for :tag, "Pairing" %>
+
+<section class="page">
+  <h1 class="page-title">Could not create that agent</h1>
+  <p class="sub">bellhop.dev answered, and it said no. Nothing was created.</p>
+
+  <div class="paper paper-pad">
+    <span class="caps">Response</span>
+    <p class="response">
+      <%= @error.code %> <span class="dim">· HTTP <%= @error.status %></span>
+    </p>
+    <p><%= @error.message %></p>
+    <% if @error.retryable? %>
+      <p class="field-note">This one is worth trying again.</p>
+    <% end %>
+  </div>
+
+  <p class="page-back">
+    <%= link_to "← Back to agents", agents_path, class: "btn btn-quiet" %>
+  </p>
+</section>
