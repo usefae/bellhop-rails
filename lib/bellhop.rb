@@ -12,6 +12,7 @@ require "bellhop/protocol"
 require "bellhop/claim_exchange"
 require "bellhop/registry"
 require "bellhop/cable"
+require "bellhop/backplane"
 require "bellhop/doctor"
 require "bellhop/engine" if defined?(Rails::Engine)
 require "bellhop/refresh_credentials_job" if defined?(ActiveJob)

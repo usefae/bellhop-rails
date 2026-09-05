@@ -148,6 +148,22 @@ becomes database load as the fleet grows. It is fine to about a thousand
 agents. Plan on Redis beyond that; `doctor` tracks your fleet size and says
 when.
 
+Bellhop's socket server inherits the app's cable adapter. To give it its
+own, set `config.cable` to a hash in the shape of `cable.yml`. An app on
+AnyCable has to: AnyCable's adapter only broadcasts to the Go server and
+cannot subscribe from Rails, so a print created on one worker would never
+reach a socket held by another, and the engine refuses to boot on it.
+Point Bellhop at Solid Cable or Redis instead:
+
+```ruby
+config.cable = { adapter: "solid_cable" }
+config.cable = { adapter: "redis", url: ENV["REDIS_URL"] }
+```
+
+Solid Cable reads `connects_to` and its polling settings from `cable.yml`
+whatever adapter line that file carries, so those stay put. The agent's
+socket stays on Puma and never touches AnyCable.
+
 ## Plan changes
 
 Entitlements live in the credential and are read when it is minted. On its

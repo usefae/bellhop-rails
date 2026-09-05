@@ -89,18 +89,16 @@ module Bellhop
         def subscribe_to_agent
           return if agent.nil?
 
-          channel  = Bellhop::Cable.channel_for(agent)
           callback = ->(raw) { handle_broadcast(raw) }
-
-          @bellhop_subscription = [ channel, callback ]
-          server.event_loop.post { pubsub.subscribe(channel, callback) }
+          @bellhop_subscription = callback
+          server.event_loop.post { Bellhop::Backplane.subscribe(agent_id, callback) }
         end
 
         def unsubscribe_from_agent
           return unless @bellhop_subscription
 
-          channel, callback = @bellhop_subscription
-          server.event_loop.post { pubsub.unsubscribe(channel, callback) }
+          callback = @bellhop_subscription
+          server.event_loop.post { Bellhop::Backplane.unsubscribe(agent_id, callback) }
         end
 
         # Everything outbound arrives here, from this process or another.

@@ -6,6 +6,10 @@ module Bellhop
 
     initializer "bellhop.check_configuration", after: :load_config_initializers do
       config.after_initialize do
+        # Raises on the any_cable adapter, here rather than from inside the
+        # routes file where the socket is mounted.
+        Bellhop::Cable.cable_config if Bellhop.cable_available?
+
         next unless Rails.env.production?
         next if Bellhop.config.public_url?
 

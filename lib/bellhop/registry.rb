@@ -44,10 +44,7 @@ module Bellhop
     def announce_supersede(agent_id, nonce)
       return unless Bellhop.cable_available?
 
-      Cable.server.broadcast(
-        Cable.channel_for_id(agent_id),
-        { "type" => "__bellhop_supersede", "nonce" => nonce }
-      )
+      Backplane.broadcast(agent_id, { "type" => "__bellhop_supersede", "nonce" => nonce })
     end
 
     def unregister(agent_id, connection)
@@ -122,7 +119,7 @@ module Bellhop
 
       return false unless Bellhop.cable_available? && online?(agent)
 
-      Cable.broadcast(agent, message)
+      Backplane.broadcast(agent.id, message)
       true
     end
 
@@ -145,7 +142,7 @@ module Bellhop
 
       message = { "type" => "__bellhop_close", "code" => code, "reason" => reason }
       message["retry_after_seconds"] = retry_after if retry_after
-      Cable.broadcast(agent, message)
+      Backplane.broadcast(agent.id, message)
     end
 
     def live_http_session(agent)

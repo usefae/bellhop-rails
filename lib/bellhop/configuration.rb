@@ -43,6 +43,18 @@ module Bellhop
     #   config.licensing = -> { MyInstrumentedLicensing.new }
     attr_writer :licensing
 
+    # Bellhop's pubsub backplane, in the shape of cable.yml. Unset, Bellhop's
+    # socket server uses the host application's Action Cable adapter, which
+    # is right for solid_cable and redis. An application on AnyCable has to
+    # set it, because AnyCable's adapter cannot subscribe from Rails.
+    #
+    #   config.cable = { adapter: "solid_cable" }
+    #   config.cable = { adapter: "redis", url: ENV["REDIS_URL"] }
+    #
+    # Solid Cable reads connects_to and its polling settings from cable.yml
+    # whatever adapter that file names, so those stay where they are.
+    attr_accessor :cable
+
     attr_writer :public_url, :poll_seconds
 
     def initialize
