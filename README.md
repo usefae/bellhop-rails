@@ -182,8 +182,8 @@ inline when it does not.
 
 A delivery names the app it is for, and the engine acts only on deliveries
 that name yours. It learns your app's publishable key from bellhop.dev on the
-first delivery; set `config.publishable_key` to skip that lookup. A delivery
-that lands twice is acted on once, and a burst of them waits on one job, both
+first delivery; set `config.publishable_key` to skip that lookup. A burst of
+deliveries waits on one job rather than enqueuing one each, with the marker
 kept in `Rails.cache`.
 
 ## The admin

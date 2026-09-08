@@ -132,7 +132,7 @@ module Bellhop
 
     # Called by a job as it starts, so the next request for it enqueues again.
     def job_started(job_class)
-      cache&.delete(pending_marker(job_class))
+      forget(pending_marker(job_class))
     end
 
     private
@@ -145,7 +145,7 @@ module Bellhop
     # request enqueues, as before.
     def enqueue_once(job_class)
       marker = pending_marker(job_class)
-      if cache && !cache.write(marker, true, unless_exist: true, expires_in: PENDING_JOB_TTL)
+      if waiting?(marker)
         logger.info { "[bellhop] #{job_class.name} is already waiting; not enqueuing another" }
         return nil
       end
@@ -153,9 +153,31 @@ module Bellhop
       begin
         job_class.perform_later
       rescue StandardError
-        cache&.delete(marker)
+        forget(marker)
         raise
       end
+    end
+
+    # True only when the marker is known to be there. A write refused because
+    # the marker exists means a job is waiting. A write that fails for any
+    # other reason proves nothing: Rails' stores answer false rather than
+    # raise when the store is down, and the null store always answers true.
+    # Then the job is enqueued anyway. The sweep is idempotent, and one too
+    # many costs less than one too few.
+    def waiting?(marker)
+      return false unless cache
+      return false if cache.write(marker, true, unless_exist: true, expires_in: PENDING_JOB_TTL)
+
+      cache.exist?(marker) ? true : false
+    rescue StandardError => e
+      logger.warn { "[bellhop] cache unavailable (#{e.class}); enqueuing without a marker" }
+      false
+    end
+
+    def forget(marker)
+      cache&.delete(marker)
+    rescue StandardError
+      nil
     end
 
     def pending_marker(job_class)

@@ -1,7 +1,5 @@
 # frozen_string_literal: true
 
-require "digest"
-
 module Bellhop
   # bellhop.dev's webhook. The event name is signed, so a verified delivery is
   # safe to dispatch on. `agent.deactivated` retires the removed agents.
@@ -27,15 +25,14 @@ module Bellhop
         return render status: :forbidden, json: { error: "wrong_app" }
       end
 
-      # A 202 can be lost on the way back and the delivery retried, which is
-      # harmless: the work is idempotent. Acting on it once and acknowledging
-      # it every time after is what keeps a replayed header from being a way
-      # to make this server mint on demand.
-      unless first_delivery?(header)
-        Bellhop.logger.info { "[bellhop] webhook received (#{event}) again; already acted on" }
-        return render status: :accepted, json: { ok: true, duplicate: true }
-      end
-
+      # There is deliberately no check for a delivery seen before. The signed
+      # string is the time in whole seconds, the event, and the app, and the
+      # signature over it is deterministic, so two deliveries in one second
+      # (two agents removed together, say) are indistinguishable from one
+      # delivery landing twice, and nothing outside the signed string can be
+      # trusted to tell them apart. Every verified delivery is acted on. The
+      # work is idempotent, and what bounds the cost of a replay is that the
+      # job it asks for is enqueued once while one is already waiting.
       case event
       when "agent.deactivated"
         Bellhop.logger.info { "[bellhop] webhook received (#{event}); retiring removed agents" }
@@ -51,16 +48,5 @@ module Bellhop
       # bellhop.dev redeliver.
       head :service_unavailable
     end
-
-    private
-      # The header is unique to a delivery: it carries the time it was signed
-      # and the signature over it. It is remembered for as long as the
-      # verifier would still accept it. A cache that keeps nothing (the null
-      # store) answers true every time, and every delivery is acted on, as
-      # before.
-      def first_delivery?(header)
-        key = "bellhop:webhook:#{Digest::SHA256.hexdigest(header.to_s)}"
-        Rails.cache.write(key, true, unless_exist: true, expires_in: 2 * WebhookVerifier::TOLERANCE)
-      end
   end
 end

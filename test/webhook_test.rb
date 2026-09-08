@@ -190,17 +190,6 @@ class WebhookEndpointTest < ActionDispatch::IntegrationTest
     assert_response :service_unavailable
   end
 
-  test "the same delivery landing twice is acknowledged twice and acted on once" do
-    header = @signing.sign
-
-    assert_enqueued_jobs 1, only: Bellhop::RefreshCredentialsJob do
-      2.times do
-        post "/bellhop/webhook", params: payload, as: :json, headers: { "Bellhop-Signature" => header }
-        assert_response :accepted
-      end
-    end
-  end
-
   test "a burst of distinct deliveries waits on one refresh, and one more after it starts" do
     assert_enqueued_jobs 1, only: Bellhop::RefreshCredentialsJob do
       3.times do |n|
@@ -216,6 +205,81 @@ class WebhookEndpointTest < ActionDispatch::IntegrationTest
       post "/bellhop/webhook", params: payload, as: :json,
         headers: { "Bellhop-Signature" => @signing.sign(t: Time.now.to_i - 10) }
     end
+  end
+
+  # Two agents removed in the same second carry the same signature, so a
+  # delivery seen before must still be acted on: every one enqueues, and
+  # the coalescing is what keeps that to one waiting job.
+  test "a delivery identical to the last one is still acted on" do
+    header = @signing.sign
+
+    post "/bellhop/webhook", params: payload(event: "agent.deactivated"), as: :json,
+      headers: { "Bellhop-Signature" => @signing.sign(event: "agent.deactivated") }
+    perform_enqueued_jobs
+
+    assert_enqueued_jobs 1, only: Bellhop::RetireDeactivatedAgentsJob do
+      post "/bellhop/webhook", params: payload(event: "agent.deactivated"), as: :json,
+        headers: { "Bellhop-Signature" => @signing.sign(event: "agent.deactivated") }
+    end
+    assert_response :accepted
+    assert_nil response.parsed_body["duplicate"]
+  end
+
+  # Rails' stores answer false from a write, rather than raising, when the
+  # store is down. That must not read as "a job is already waiting".
+  test "with the cache unavailable every delivery enqueues" do
+    with_cache(UnavailableStore.new) do
+      assert_enqueued_jobs 2, only: Bellhop::RefreshCredentialsJob do
+        2.times do |n|
+          post "/bellhop/webhook", params: payload, as: :json,
+            headers: { "Bellhop-Signature" => @signing.sign(t: Time.now.to_i - n) }
+          assert_response :accepted
+        end
+      end
+    end
+  end
+
+  test "with a null store every delivery enqueues" do
+    with_cache(ActiveSupport::Cache::NullStore.new) do
+      assert_enqueued_jobs 2, only: Bellhop::RefreshCredentialsJob do
+        2.times do |n|
+          post "/bellhop/webhook", params: payload, as: :json,
+            headers: { "Bellhop-Signature" => @signing.sign(t: Time.now.to_i - n) }
+          assert_response :accepted
+        end
+      end
+    end
+  end
+
+  test "a store that raises is treated as unavailable" do
+    with_cache(RaisingStore.new) do
+      assert_enqueued_jobs 1, only: Bellhop::RefreshCredentialsJob do
+        post "/bellhop/webhook", params: payload, as: :json,
+          headers: { "Bellhop-Signature" => @signing.sign }
+      end
+      assert_response :accepted
+    end
+  end
+
+  # A queue that refuses the job must not be answered with a 202 bellhop.dev
+  # takes as done. The error propagates, and the marker goes with it so the
+  # redelivery enqueues rather than finding a job "already waiting".
+  test "a queue that refuses the job is not answered 202" do
+    job = Bellhop::RefreshCredentialsJob
+    job.define_singleton_method(:perform_later) { |*| raise IOError, "queue down" }
+    begin
+      post "/bellhop/webhook", params: payload, as: :json,
+        headers: { "Bellhop-Signature" => @signing.sign }
+    ensure
+      job.singleton_class.remove_method(:perform_later)
+    end
+    assert_response :internal_server_error
+
+    assert_enqueued_jobs 1, only: Bellhop::RefreshCredentialsJob do
+      post "/bellhop/webhook", params: payload, as: :json,
+        headers: { "Bellhop-Signature" => @signing.sign(t: Time.now.to_i - 1) }
+    end
+    assert_response :accepted
   end
 
   test "a retire waits the same way, separately from a refresh" do
@@ -282,6 +346,30 @@ class WebhookEndpointTest < ActionDispatch::IntegrationTest
   private
     def payload(event: SigningLicensing::EVENT, app: SigningLicensing::APP)
       { event: event, app: app }
+    end
+
+    def with_cache(store)
+      previous = Rails.cache
+      Rails.cache = store
+      yield
+    ensure
+      Rails.cache = previous
+    end
+
+    # What Rails' stores look like from outside when the store is down: every
+    # write is refused and nothing can be read back.
+    class UnavailableStore
+      def write(*) = false
+      def exist?(*) = false
+      def read(*) = nil
+      def delete(*) = false
+    end
+
+    class RaisingStore
+      def write(*) = raise(IOError, "connection refused")
+      def exist?(*) = raise(IOError, "connection refused")
+      def read(*) = raise(IOError, "connection refused")
+      def delete(*) = raise(IOError, "connection refused")
     end
 end
 
