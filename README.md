@@ -180,6 +180,12 @@ Behind it are `Bellhop.refresh!` and `Bellhop.retire_deactivated!`, which you
 can also call by hand. Each runs from Active Job when your app has it and
 inline when it does not.
 
+A delivery names the app it is for, and the engine acts only on deliveries
+that name yours. It learns your app's publishable key from bellhop.dev on the
+first delivery; set `config.publishable_key` to skip that lookup. A delivery
+that lands twice is acted on once, and a burst of them waits on one job, both
+kept in `Rails.cache`.
+
 ## The admin
 
 It is at the engine's mount point. It is open in development and refuses to

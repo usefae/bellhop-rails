@@ -83,6 +83,16 @@ class WebhookVerifierTest < ActiveSupport::TestCase
     assert_raises(Bellhop::LicensingError) { valid?(@signing.sign) }
   end
 
+  test "a key withdrawn from the published set stops verifying once the set ages out" do
+    assert valid?(@signing.sign)
+
+    withdrawn = SigningLicensing.new(kid: "2027-01")
+    header = @signing.sign
+
+    assert valid?(header, licensing: withdrawn), "inside the hour the fetched set is still trusted"
+    assert_not valid?(header, licensing: withdrawn, now: Time.now + Bellhop::WebhookVerifier::MAX_AGE + 1)
+  end
+
   private
     def valid?(header, event: SigningLicensing::EVENT, app: SigningLicensing::APP, licensing: @signing, now: Time.now)
       Bellhop::WebhookVerifier.valid?(header, event: event, app: app, licensing: licensing, now: now)
@@ -126,6 +136,100 @@ class WebhookEndpointTest < ActionDispatch::IntegrationTest
       headers: { "Bellhop-Signature" => @signing.sign }
 
     assert_response :service_unavailable
+  end
+
+  # Another customer's delivery is genuine: bellhop.dev signed it, and it
+  # names that customer's app. It must not set this installation minting.
+  test "a genuine delivery for a different app is refused" do
+    assert_no_enqueued_jobs do
+      post "/bellhop/webhook", params: payload(app: "bh_pk_other"), as: :json,
+        headers: { "Bellhop-Signature" => @signing.sign(app: "bh_pk_other") }
+    end
+
+    assert_response :forbidden
+  end
+
+  test "the publishable key is read from the app record once and remembered" do
+    2.times do |n|
+      post "/bellhop/webhook", params: payload, as: :json,
+        headers: { "Bellhop-Signature" => @signing.sign(t: Time.now.to_i - n) }
+      assert_response :accepted
+    end
+
+    assert_equal 1, @signing.app_reads
+  end
+
+  test "a configured publishable key skips the lookup" do
+    Bellhop.config.publishable_key = "bh_pk_test"
+    @signing.fail_app = true
+
+    post "/bellhop/webhook", params: payload, as: :json,
+      headers: { "Bellhop-Signature" => @signing.sign }
+
+    assert_response :accepted
+    assert_equal 0, @signing.app_reads
+  end
+
+  test "answers 503 when the app record cannot be read, so bellhop.dev redelivers" do
+    @signing.fail_app = true
+
+    assert_no_enqueued_jobs do
+      post "/bellhop/webhook", params: payload, as: :json,
+        headers: { "Bellhop-Signature" => @signing.sign }
+    end
+
+    assert_response :service_unavailable
+  end
+
+  test "answers 503 when the app record names no publishable key" do
+    @signing.define_singleton_method(:app) { { "name" => "Test App" } }
+
+    post "/bellhop/webhook", params: payload, as: :json,
+      headers: { "Bellhop-Signature" => @signing.sign }
+
+    assert_response :service_unavailable
+  end
+
+  test "the same delivery landing twice is acknowledged twice and acted on once" do
+    header = @signing.sign
+
+    assert_enqueued_jobs 1, only: Bellhop::RefreshCredentialsJob do
+      2.times do
+        post "/bellhop/webhook", params: payload, as: :json, headers: { "Bellhop-Signature" => header }
+        assert_response :accepted
+      end
+    end
+  end
+
+  test "a burst of distinct deliveries waits on one refresh, and one more after it starts" do
+    assert_enqueued_jobs 1, only: Bellhop::RefreshCredentialsJob do
+      3.times do |n|
+        post "/bellhop/webhook", params: payload, as: :json,
+          headers: { "Bellhop-Signature" => @signing.sign(t: Time.now.to_i - n) }
+        assert_response :accepted
+      end
+    end
+
+    perform_enqueued_jobs
+
+    assert_enqueued_jobs 1, only: Bellhop::RefreshCredentialsJob do
+      post "/bellhop/webhook", params: payload, as: :json,
+        headers: { "Bellhop-Signature" => @signing.sign(t: Time.now.to_i - 10) }
+    end
+  end
+
+  test "a retire waits the same way, separately from a refresh" do
+    assert_enqueued_jobs 1, only: Bellhop::RetireDeactivatedAgentsJob do
+      2.times do |n|
+        post "/bellhop/webhook", params: payload(event: "agent.deactivated"), as: :json,
+          headers: { "Bellhop-Signature" => @signing.sign(event: "agent.deactivated", t: Time.now.to_i - n) }
+      end
+    end
+
+    assert_enqueued_jobs 1, only: Bellhop::RefreshCredentialsJob do
+      post "/bellhop/webhook", params: payload, as: :json,
+        headers: { "Bellhop-Signature" => @signing.sign }
+    end
   end
 
   test "the whole path: a webhook lands and every paired agent is pushed a fresh credential" do
@@ -176,8 +280,8 @@ class WebhookEndpointTest < ActionDispatch::IntegrationTest
   end
 
   private
-    def payload(event: SigningLicensing::EVENT)
-      { event: event, app: SigningLicensing::APP }
+    def payload(event: SigningLicensing::EVENT, app: SigningLicensing::APP)
+      { event: event, app: app }
     end
 end
 

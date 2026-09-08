@@ -8,6 +8,12 @@ module Bellhop
     # The licensing API. Defaults to https://bellhop.dev.
     attr_accessor :api_url
 
+    # Your app's publishable key (bh_pk_...), which is how bellhop.dev names
+    # an app in a webhook. Optional: unset, the engine reads it from your
+    # app's record on the first delivery and keeps it. Set it to skip that
+    # round trip.
+    attr_accessor :publishable_key
+
     # Display name and colour handed to the agent before it activates. After
     # that, the branding registered on bellhop.dev is used.
     attr_accessor :app_name, :accent_color

@@ -38,4 +38,10 @@ Bellhop.configure do |config|
   # The licensing API. Defaults to https://bellhop.dev.
   #
   #   config.api_url = "https://bellhop.dev"
+
+  # Your app's publishable key, which is how bellhop.dev names your app in a
+  # webhook. Optional: the engine reads it from your app's record on the
+  # first delivery. Set it to skip that round trip.
+  #
+  #   config.publishable_key = "bh_pk_..."
 end

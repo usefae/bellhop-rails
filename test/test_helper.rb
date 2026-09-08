@@ -23,13 +23,14 @@ end
 # activation happens before a claim token is consumed and there is deliberately
 # no way to skip it.
 class FakeLicensing
-  attr_reader :activations, :renewals, :deactivations, :remote_agents
-  attr_accessor :fail_activation
+  attr_reader :activations, :renewals, :deactivations, :remote_agents, :app_reads
+  attr_accessor :fail_activation, :fail_app
 
   def initialize
     @next_id = 0
-    @activations = @renewals = @deactivations = 0
+    @activations = @renewals = @deactivations = @app_reads = 0
     @fail_activation = nil
+    @fail_app = false
     @remote_agents = []
   end
 
@@ -62,8 +63,12 @@ class FakeLicensing
   end
 
   def app
+    @app_reads += 1
+    raise Bellhop::LicensingError.new(code: "unreachable", status: 0) if fail_app
+
     {
-      "name" => "Test App", "plan" => "platform", "in_good_standing" => true,
+      "name" => "Test App", "publishable_key" => "bh_pk_test",
+      "plan" => "platform", "in_good_standing" => true,
       "active_agent_count" => 1,
       "entitlements" => { "agent_cap" => 100, "scales_allowed" => true, "max_printers" => nil }
     }
@@ -94,6 +99,8 @@ module BellhopTestCase
       Bellhop.config.licensing = -> { fake }
       Bellhop::Registry.reset!
       Bellhop.last_renewal_sweep_at = nil
+      Bellhop.publishable_key = nil
+      Bellhop.config.publishable_key = nil
       Rails.cache.clear
     end
 

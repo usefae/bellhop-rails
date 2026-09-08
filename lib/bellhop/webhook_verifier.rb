@@ -18,6 +18,11 @@ module Bellhop
     # Minimum seconds between key refetches when a kid is unknown.
     REFETCH_INTERVAL = 60
 
+    # How long a fetched key set is trusted before it is fetched again. A key
+    # withdrawn from the well-known set would otherwise stay honoured here
+    # until the next rotation introduced a kid this process had not seen.
+    MAX_AGE = 60 * 60
+
     LOCK = Mutex.new
 
     class << self
@@ -59,16 +64,16 @@ module Bellhop
       private
         def public_key(kid, licensing:, now:)
           LOCK.synchronize do
-            fetch(licensing) if @keys.nil?
+            fetch(licensing, now) if @keys.nil? || now - @fetched_at >= MAX_AGE
             # An unknown kid usually means rotation, so ask again, rate limited.
-            fetch(licensing) if !@keys.key?(kid) && now - @fetched_at >= REFETCH_INTERVAL
+            fetch(licensing, now) if !@keys.key?(kid) && now - @fetched_at >= REFETCH_INTERVAL
             @keys[kid]
           end
         end
 
         # A key that does not parse is skipped, so one malformed entry cannot
         # take down the ones that verify.
-        def fetch(licensing)
+        def fetch(licensing, now)
           entries = Array(licensing.signing_keys["keys"])
           @keys = entries.each_with_object({}) do |entry, keys|
             raw = Base64.strict_decode64(entry["public_key"].to_s)
@@ -76,7 +81,7 @@ module Bellhop
           rescue ArgumentError, OpenSSL::PKey::PKeyError, OpenSSL::OpenSSLError
             Bellhop.logger.warn { "[bellhop] skipping signing key #{entry["kid"].inspect}: not a base64 Ed25519 public key" }
           end
-          @fetched_at = Time.now
+          @fetched_at = now
         end
     end
   end

@@ -32,8 +32,14 @@ module Bellhop
   # at most this often per process.
   OPPORTUNISTIC_RENEWAL_COOLDOWN = 6.hours
 
+  # A job asked for while the same job is already waiting is not enqueued
+  # again. The marker lives this long at most, in case the waiting job never
+  # runs.
+  PENDING_JOB_TTL = 5.minutes
+
   RENEWAL_SWEEP_MUTEX = Mutex.new
-  private_constant :RENEWAL_SWEEP_MUTEX
+  PUBLISHABLE_KEY_MUTEX = Mutex.new
+  private_constant :RENEWAL_SWEEP_MUTEX, :PUBLISHABLE_KEY_MUTEX
 
   class << self
     attr_writer :logger
@@ -41,11 +47,29 @@ module Bellhop
     # Tests reset the renewal cooldown by assigning nil.
     attr_writer :last_renewal_sweep_at
 
+    # Tests forget the remembered publishable key by assigning nil.
+    attr_writer :publishable_key
+
     def logger
       @logger ||= defined?(Rails) && Rails.logger ? Rails.logger : Logger.new($stdout)
     end
 
     def licensing = config.licensing
+
+    # The publishable key this installation is registered under, which is how
+    # bellhop.dev names an app in a webhook. Configured, or read once from the
+    # app's record and remembered for the life of the process. Raises
+    # LicensingError when it is needed and cannot be read.
+    def publishable_key(licensing: Bellhop.licensing)
+      configured = config.publishable_key.presence
+      return configured if configured
+
+      PUBLISHABLE_KEY_MUTEX.synchronize do
+        @publishable_key ||= licensing.app["publishable_key"].presence or
+          raise LicensingError.new(code: "publishable_key_unavailable", status: 0,
+            message: "the app record on bellhop.dev carries no publishable key")
+      end
+    end
 
     # False on an API-only or `--minimal` app, where action_cable/engine is not
     # loaded. The HTTP transport carries the same messages.
@@ -66,7 +90,7 @@ module Bellhop
     end
 
     def refresh_later
-      defined?(ActiveJob) ? RefreshCredentialsJob.perform_later : refresh!
+      defined?(ActiveJob) ? enqueue_once(RefreshCredentialsJob) : refresh!
     end
 
     def renew_later
@@ -103,10 +127,44 @@ module Bellhop
     end
 
     def retire_deactivated_later
-      defined?(ActiveJob) ? RetireDeactivatedAgentsJob.perform_later : retire_deactivated!
+      defined?(ActiveJob) ? enqueue_once(RetireDeactivatedAgentsJob) : retire_deactivated!
+    end
+
+    # Called by a job as it starts, so the next request for it enqueues again.
+    def job_started(job_class)
+      cache&.delete(pending_marker(job_class))
     end
 
     private
+
+    # Webhook deliveries come in bursts, one per edit on bellhop.dev plus the
+    # redeliveries, and every one asks for the same sweep. One job waits at a
+    # time. The marker is cleared as the job starts rather than as it ends, so
+    # a delivery landing mid-sweep still gets a sweep of its own, which is
+    # the one that sees the newer state. With no cache to hold a marker, every
+    # request enqueues, as before.
+    def enqueue_once(job_class)
+      marker = pending_marker(job_class)
+      if cache && !cache.write(marker, true, unless_exist: true, expires_in: PENDING_JOB_TTL)
+        logger.info { "[bellhop] #{job_class.name} is already waiting; not enqueuing another" }
+        return nil
+      end
+
+      begin
+        job_class.perform_later
+      rescue StandardError
+        cache&.delete(marker)
+        raise
+      end
+    end
+
+    def pending_marker(job_class)
+      "bellhop:pending:#{job_class.name}"
+    end
+
+    def cache
+      Rails.cache if defined?(Rails) && Rails.respond_to?(:cache)
+    end
 
     def renewal_sweep_due?
       RENEWAL_SWEEP_MUTEX.synchronize do
