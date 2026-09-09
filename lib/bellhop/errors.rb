@@ -5,6 +5,10 @@ module Bellhop
 
   class ConfigurationError < Error; end
 
+  # The job queue would not take a job. The webhook answers this with a 5xx,
+  # so bellhop.dev redelivers instead of taking a 202 as done.
+  class QueueUnavailable < Error; end
+
   # An agent is not connected, or does not advertise what you asked it to do.
   class AgentError < Error
     attr_reader :agent

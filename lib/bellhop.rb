@@ -150,12 +150,23 @@ module Bellhop
         return nil
       end
 
+      job = job_class.new
       begin
-        job_class.perform_later
+        enqueued = job.enqueue
       rescue StandardError
         forget(marker)
         raise
       end
+      # A refused enqueue is answered with false, not an exception: Active Job
+      # rescues its own EnqueueError and reports it that way. Left unchecked,
+      # that false would become a 202 bellhop.dev takes as done, with a marker
+      # behind it that makes the redelivery find a job "already waiting".
+      unless enqueued
+        forget(marker)
+        reason = job.respond_to?(:enqueue_error) && job.enqueue_error ? ": #{job.enqueue_error.message}" : ""
+        raise QueueUnavailable, "#{job_class.name} was not enqueued#{reason}"
+      end
+      job
     end
 
     # True only when the marker is known to be there. A write refused because

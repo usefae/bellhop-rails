@@ -43,9 +43,9 @@ module Bellhop
       end
 
       render status: :accepted, json: { ok: true }
-    rescue LicensingError
-      # The key set, or the app record, could not be fetched. A 5xx makes
-      # bellhop.dev redeliver.
+    rescue LicensingError, QueueUnavailable
+      # The key set or the app record could not be fetched, or the queue would
+      # not take the job. A 5xx makes bellhop.dev redeliver.
       head :service_unavailable
     end
   end

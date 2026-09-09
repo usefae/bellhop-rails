@@ -261,21 +261,58 @@ class WebhookEndpointTest < ActionDispatch::IntegrationTest
     end
   end
 
-  # A queue that refuses the job must not be answered with a 202 bellhop.dev
-  # takes as done. The error propagates, and the marker goes with it so the
-  # redelivery enqueues rather than finding a job "already waiting".
-  test "a queue that refuses the job is not answered 202" do
+  # A queue adapter that will not take anything, standing in for a queue that
+  # is full, down, or refusing.
+  class RefusingAdapter
+    def initialize(error)
+      @error = error
+    end
+
+    def enqueue(_job) = raise(@error)
+    def enqueue_at(_job, _at) = raise(@error)
+    def enqueue_all(_jobs) = raise(@error)
+  end
+
+  def with_refusing_queue(job_class, error)
+    original = job_class.queue_adapter
+    job_class.enable_test_adapter(RefusingAdapter.new(error))
+    yield
+  ensure
+    job_class.enable_test_adapter(original)
+  end
+
+  # Active Job answers a refused enqueue with false, not an exception: it
+  # rescues its own EnqueueError and reports it that way. That false must not
+  # become a 202 bellhop.dev takes as done, and must not leave a marker behind
+  # that makes the redelivery find a job "already waiting".
+  test "a queue that refuses the job answers 503 and the redelivery enqueues" do
+    job = Bellhop::RetireDeactivatedAgentsJob
+    with_refusing_queue(job, ActiveJob::EnqueueError.new("queue full")) do
+      assert_no_enqueued_jobs only: job do
+        post "/bellhop/webhook", params: payload(event: "agent.deactivated"), as: :json,
+          headers: { "Bellhop-Signature" => @signing.sign(event: "agent.deactivated") }
+      end
+      assert_response :service_unavailable
+    end
+
+    assert_enqueued_jobs 1, only: job do
+      post "/bellhop/webhook", params: payload(event: "agent.deactivated"), as: :json,
+        headers: { "Bellhop-Signature" => @signing.sign(event: "agent.deactivated", t: Time.now.to_i - 1) }
+    end
+    assert_response :accepted
+  end
+
+  # An error Active Job does not rescue propagates as it is. The marker still
+  # goes with it, so the redelivery enqueues.
+  test "a queue that raises is not answered 202" do
     job = Bellhop::RefreshCredentialsJob
-    job.define_singleton_method(:perform_later) { |*| raise IOError, "queue down" }
-    begin
+    with_refusing_queue(job, IOError.new("queue down")) do
       post "/bellhop/webhook", params: payload, as: :json,
         headers: { "Bellhop-Signature" => @signing.sign }
-    ensure
-      job.singleton_class.remove_method(:perform_later)
+      assert_response :internal_server_error
     end
-    assert_response :internal_server_error
 
-    assert_enqueued_jobs 1, only: Bellhop::RefreshCredentialsJob do
+    assert_enqueued_jobs 1, only: job do
       post "/bellhop/webhook", params: payload, as: :json,
         headers: { "Bellhop-Signature" => @signing.sign(t: Time.now.to_i - 1) }
     end
