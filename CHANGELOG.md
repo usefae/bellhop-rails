@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 1.1.0
 
 - The webhook acts only on deliveries that name this app. The publishable key
   is read from bellhop.dev on the first delivery, or set with
